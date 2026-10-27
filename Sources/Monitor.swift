@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Observation
 import os
@@ -40,10 +41,20 @@ final class Monitor {
     @ObservationIgnored private var snapshotHistory: [Double] = []
     @ObservationIgnored private var snapshotsWritten = 0
     @ObservationIgnored private var ticks = 0
+    @ObservationIgnored private var usageVisible = true
+    @ObservationIgnored private var userAway = false
+    @ObservationIgnored private var listLastNeeded = Date.distantPast
+
+    /// No keyboard or mouse input for this long counts as away: nobody is reading the dashboard.
+    private static let awayAfter: TimeInterval = 60
 
     /// While nobody is looking, only the menu bar temperature is published, so SwiftUI doesn't
     /// re-render the dashboard and `top` isn't running.
-    private var isWatched: Bool { dashboardVisible || menuOpen }
+    private var isWatched: Bool { (dashboardVisible || menuOpen) && !userAway }
+
+    /// `top` is the expensive part, so it only runs while a process list is actually on screen:
+    /// the menu panel, or the dashboard scrolled to "What's using power".
+    private var listOnScreen: Bool { isWatched && (menuOpen || usageVisible) }
 
     init() {
         processStream.onSample = { [weak self] sample in
@@ -58,9 +69,12 @@ final class Monitor {
                 // Reading 40+ sensors and the SMC happens on the main thread, so skip it mid-scroll;
                 // setScrolling(false) refreshes as soon as the scroll ends.
                 guard let self, !self.scrolling else { return }
-                // With no window or menu open, only the menu bar label and widget need data: every 6 s is plenty.
                 self.ticks += 1
-                if self.isWatched || self.ticks % 3 == 0 { self.refresh() }
+                self.checkAway()
+                // Unwatched, only the menu bar label and widget need data: every 6 s, or 10 s while away.
+                let every = self.isWatched ? 1 : (self.userAway ? 5 : 3)
+                if self.ticks % every == 0 { self.refresh() }
+                self.updateSampler()
             }
         }
         timer?.tolerance = 0.5
@@ -98,12 +112,33 @@ final class Monitor {
 
     @ObservationIgnored private let log = Logger(subsystem: "com.hammad.Ember", category: "monitor")
 
+    func setUsageVisible(_ visible: Bool) {
+        guard visible != usageVisible else { return }
+        usageVisible = visible
+        updateSampler()
+    }
+
     private func watchersChanged() {
-        log.debug("watchers: dashboard=\(self.dashboardVisible) menu=\(self.menuOpen)")
-        if isWatched {
-            refresh()
+        log.debug("watchers: dashboard=\(self.dashboardVisible) menu=\(self.menuOpen) away=\(self.userAway)")
+        if isWatched { refresh() }
+        updateSampler()
+    }
+
+    private func checkAway() {
+        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0) ?? .null)
+        let away = idle > Self.awayAfter
+        guard away != userAway else { return }
+        userAway = away
+        watchersChanged()
+    }
+
+    private func updateSampler() {
+        let now = Date()
+        if listOnScreen {
+            listLastNeeded = now
             processStream.start()
-        } else {
+        } else if !isWatched || now.timeIntervalSince(listLastNeeded) > 10 {
+            // Scrolling past the list briefly shouldn't restart `top`, so keep it for 10 s after.
             processStream.stop()
         }
     }

@@ -61,33 +61,44 @@ struct SensorGroup: Identifiable, Equatable {
 /// Reads Apple Silicon temperature sensors through the IOHID event system (no root needed).
 final class SensorReader {
     private let client: CFTypeRef?
-    private let services: [CFTypeRef]
+    /// Sensors worth reading, with their display names, sorted by name. Each read is an IPC round trip
+    /// (~1 ms), so the dead and calibration sensors are dropped once here rather than on every refresh.
+    private let sensors: [(service: CFTypeRef, name: String)]
+    private static let temperatureEvent: Int64 = 15
 
     init() {
         client = IOHIDEventSystemClientCreate(kCFAllocatorDefault)
-        guard let client else { services = []; return }
+        guard let client else { sensors = []; return }
         let matching = ["PrimaryUsagePage": 0xff00, "PrimaryUsage": 5] as CFDictionary
         _ = IOHIDEventSystemClientSetMatching(client, matching)
-        services = (IOHIDEventSystemClientCopyServices(client) as? [CFTypeRef]) ?? []
-    }
+        let services = (IOHIDEventSystemClientCopyServices(client) as? [CFTypeRef]) ?? []
 
-    func read() -> [SensorReading] {
-        let temperatureEvent: Int64 = 15
-        var readings: [SensorReading] = []
+        var found: [(service: CFTypeRef, name: String)] = []
         var seen: [String: Int] = [:]
         for service in services {
             guard let name = IOHIDServiceClientCopyProperty(service, "Product" as CFString) as? String,
-                  let event = IOHIDServiceClientCopyEvent(service, temperatureEvent, 0, 0) else { continue }
-            let value = IOHIDEventGetFloatValue(event, Int32(temperatureEvent << 16))
-            // Unused sensors report 0 or large negative values.
-            guard value > 1, value < 130 else { continue }
-            // Several sensors share a name (e.g. three "PMU tcal"); keep ids unique.
+                  SensorKind(sensorName: name) != nil,
+                  Self.celsius(service) != nil else { continue }
+            // Several sensors share a name; keep ids unique.
             let n = seen[name, default: 0]
             seen[name] = n + 1
-            // Round to 0.1° so unchanged readings don't trigger redraws.
-            readings.append(SensorReading(name: n == 0 ? name : "\(name) #\(n + 1)", celsius: (value * 10).rounded() / 10))
+            found.append((service, n == 0 ? name : "\(name) #\(n + 1)"))
         }
-        return readings.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        sensors = found.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// Unused sensors (e.g. "PMU tdev") report 0 or large negative values.
+    private static func celsius(_ service: CFTypeRef) -> Double? {
+        guard let event = IOHIDServiceClientCopyEvent(service, temperatureEvent, 0, 0) else { return nil }
+        let value = IOHIDEventGetFloatValue(event, Int32(temperatureEvent << 16))
+        return value > 1 && value < 130 ? value : nil
+    }
+
+    func read() -> [SensorReading] {
+        sensors.compactMap { sensor in
+            // Round to 0.1° so unchanged readings don't trigger redraws.
+            Self.celsius(sensor.service).map { SensorReading(name: sensor.name, celsius: ($0 * 10).rounded() / 10) }
+        }
     }
 
     static func group(_ readings: [SensorReading]) -> [SensorGroup] {

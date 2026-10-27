@@ -29,7 +29,8 @@ struct UsageRow: Identifiable, Equatable {
 /// Spawning `top -l 2` on every refresh scans every process twice and discards the first
 /// pass; a single long-lived `top` scans once per interval, which is far cheaper.
 final class ProcessStream {
-    static let interval = 3
+    /// Seconds between samples; Activity Monitor's default too.
+    static let interval = 5
 
     /// Called on the main queue with each new sample.
     var onSample: (([ProcessUsage]) -> Void)?

@@ -924,6 +924,8 @@ struct UsagePanel: View {
                     .padding(.top, 4)
             }
         }
+        // Lets the monitor run `top` only while this list is on screen.
+        .onScrollVisibilityChange(threshold: 0.05) { monitor.setUsageVisible($0) }
     }
 }
 

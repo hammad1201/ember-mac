@@ -47,13 +47,15 @@ A monitor that heats up your Mac defeats the point, so Ember is careful:
 
 | State | Ember CPU |
 | --- | --- |
-| Dashboard open | ~2% app + ~3.5% for the process sampler |
-| Window closed (menu bar only) | well under 1% |
+| Dashboard open, app list on screen | ~1.6% app + ~1.7% for the process sampler |
+| Dashboard open, app list scrolled away | ~1.6% |
+| Window closed, or you've stepped away | well under 1% |
 | Desktop widget | ~0%: it redraws every 5 minutes from a 200-byte snapshot |
 
-- Process sampling (a single long-running `top`) only runs while the dashboard or menu panel is actually on screen.
-- When nothing is visible, Ember only updates the menu bar temperature and the widget snapshot every few seconds, and SwiftUI doesn't re-render anything.
-- Expensive effects are rasterized on the GPU, and UI updates pause while you scroll.
+- Process sampling (a single long-running `top`, every 5 s like Activity Monitor) only runs while a process list is actually on screen.
+- After a minute without keyboard or mouse input, Ember stops sampling processes and reads sensors every 10 s.
+- Sensors that never report a valid temperature are dropped at launch, which cut each read from ~80 ms to ~30 ms.
+- When nothing is visible, SwiftUI doesn't re-render anything; UI updates and hover effects pause while you scroll.
 
 Measured on an M5 Pro MacBook Pro.
 

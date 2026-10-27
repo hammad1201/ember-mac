@@ -157,9 +157,10 @@ private struct MediumView: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            VStack(spacing: 4) {
+            VStack(spacing: 0) {
                 Gauge(value: snapshot.chipMax, lineWidth: 10)
                 Text("Chip · hottest").font(.system(size: 9)).foregroundStyle(.white.opacity(0.6))
+                    .offset(y: -6)
             }
             .frame(width: 104)
 
@@ -179,16 +180,34 @@ private struct MediumView: View {
                     Stat(label: "Battery", value: snapshot.batteryPercent.map { "\($0)" } ?? "—", unit: "%")
                 }
 
-                Sparkline(values: snapshot.history)
-                    .frame(height: 22)
+                // The trend takes whatever height is left, so the widget never shows a gap.
+                Group {
+                    if snapshot.history.count > 1 {
+                        Sparkline(values: snapshot.history)
+                    } else {
+                        Text("Temperature trend fills in over the next few minutes")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.white.opacity(0.45))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    }
+                }
+                .frame(minHeight: 18, maxHeight: .infinity)
 
                 HStack {
-                    Text("Last 30 min").font(.system(size: 9)).foregroundStyle(.white.opacity(0.5))
+                    Text(trendCaption).font(.system(size: 9)).foregroundStyle(.white.opacity(0.5))
                     Spacer()
                     UpdatedLabel(date: snapshot.date)
                 }
             }
         }
+    }
+
+    private var trendCaption: String {
+        guard snapshot.history.count > 1, let lo = snapshot.history.min(), let hi = snapshot.history.max() else {
+            return "Last 30 min"
+        }
+        let minutes = snapshot.history.count
+        return String(format: "Last %d min · %.0f–%.0f°", minutes, lo, hi)
     }
 }
 

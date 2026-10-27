@@ -63,6 +63,10 @@ final class Monitor {
                 self.update(\.processes, sample)
             }
         }
+        // Carry the widget's trend over a relaunch, so it doesn't start empty again.
+        if let last = Snapshot.load(), Date.now.timeIntervalSince(last.date) < 30 * 60 {
+            snapshotHistory = last.history
+        }
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: Self.sensorInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {

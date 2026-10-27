@@ -43,7 +43,10 @@ sed "s/__APP_GROUP__/$APP_GROUP/" Resources/Info.plist > "$APP/Contents/Info.pli
 if [[ -n "$TEAM_ID" ]]; then
   echo "› Compiling widget (team $TEAM_ID)"
   mkdir -p "$APPEX/Contents/MacOS"
+  # Extensions must start in Foundation's _NSExtensionMain (as Xcode links them),
+  # which sets up the extension runtime before calling the Swift @main.
   swiftc -O -swift-version 5 -target $TARGET -parse-as-library -application-extension \
+    -Xlinker -e -Xlinker _NSExtensionMain \
     Widget/*.swift Sources/Shared/*.swift \
     -o "$APPEX/Contents/MacOS/EmberWidget"
   sed "s/__APP_GROUP__/$APP_GROUP/" Resources/Widget-Info.plist > "$APPEX/Contents/Info.plist"

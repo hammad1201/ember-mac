@@ -76,6 +76,10 @@ if [[ "${1:-}" == "--install" ]]; then
   mkdir -p ~/Applications
   rm -rf ~/Applications/Ember.app
   cp -R "$APP" ~/Applications/
+  # Two registered copies confuse the widget daemon, so keep only the installed one.
+  LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+  "$LSREGISTER" -u "$PWD/$APP" 2>/dev/null || true
+  "$LSREGISTER" -f -R ~/Applications/Ember.app
   echo "› Installed to ~/Applications/Ember.app"
 fi
 echo "✓ $APP"

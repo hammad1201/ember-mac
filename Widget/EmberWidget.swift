@@ -118,10 +118,12 @@ private struct UpdatedLabel: View {
 
     var body: some View {
         // Ember writes every minute; anything much older means the app isn't running.
+        // A clock time, not a relative one: `.relative` ticks every second ("1 min, 4 sec").
         if Date.now.timeIntervalSince(date) > 15 * 60 {
             Text("Ember isn't running").font(.system(size: 9)).foregroundStyle(Theme.blush)
         } else {
-            Text(date, style: .relative).font(.system(size: 9)).foregroundStyle(.white.opacity(0.5))
+            Text("Updated \(date.formatted(date: .omitted, time: .shortened))")
+                .font(.system(size: 9)).foregroundStyle(.white.opacity(0.5))
         }
     }
 }
@@ -140,10 +142,11 @@ private struct SmallView: View {
             }
             Gauge(value: snapshot.chipMax)
                 .frame(maxWidth: .infinity)
-            HStack {
-                Text(snapshot.state.detail).font(.system(size: 11, weight: .medium)).foregroundStyle(.white)
-                Spacer()
-            }
+            Text(snapshot.state.detail)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
             UpdatedLabel(date: snapshot.date)
         }
     }
@@ -158,26 +161,32 @@ private struct MediumView: View {
                 Gauge(value: snapshot.chipMax, lineWidth: 10)
                 Text("Chip · hottest").font(.system(size: 9)).foregroundStyle(.white.opacity(0.6))
             }
-            .frame(width: 112)
+            .frame(width: 104)
 
-            VStack(alignment: .leading, spacing: 7) {
-                HStack {
-                    Label {
-                        Text(snapshot.state.detail).foregroundStyle(.white)
-                    } icon: {
-                        Image(systemName: snapshot.state.symbol).foregroundStyle(snapshot.state.color)
-                    }
-                    .font(.system(size: 12, weight: .semibold))
-                    Spacer()
-                    UpdatedLabel(date: snapshot.date)
+            VStack(alignment: .leading, spacing: 8) {
+                Label {
+                    Text(snapshot.state.detail).foregroundStyle(.white)
+                } icon: {
+                    Image(systemName: snapshot.state.symbol).foregroundStyle(snapshot.state.color)
                 }
-                HStack(spacing: 14) {
-                    Stat(label: "Fans", value: snapshot.fanRPM.map { "\(Int($0))" } ?? "—", unit: "rpm")
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+                HStack(alignment: .top, spacing: 12) {
+                    Stat(label: "Fans", value: snapshot.fanRPM.map { Int($0).formatted() } ?? "—", unit: "rpm")
                     Stat(label: "Power", value: snapshot.watts.map { String(format: "%.1f", $0) } ?? "—", unit: "W")
                     Stat(label: "Battery", value: snapshot.batteryPercent.map { "\($0)" } ?? "—", unit: "%")
                 }
+
                 Sparkline(values: snapshot.history)
-                    .frame(height: 26)
+                    .frame(height: 22)
+
+                HStack {
+                    Text("Last 30 min").font(.system(size: 9)).foregroundStyle(.white.opacity(0.5))
+                    Spacer()
+                    UpdatedLabel(date: snapshot.date)
+                }
             }
         }
     }
@@ -196,6 +205,8 @@ private struct Stat: View {
                 Text(unit).font(.system(size: 10)).foregroundStyle(.white.opacity(0.6))
             }
             .foregroundStyle(.white)
+            .lineLimit(1)
+            .fixedSize()
         }
     }
 }
@@ -210,13 +221,31 @@ private struct Sparkline: View {
                 let span = max(hi - lo, 4)
                 let points = values.enumerated().map { i, v in
                     CGPoint(x: geo.size.width * CGFloat(i) / CGFloat(values.count - 1),
-                            y: geo.size.height * (1 - CGFloat((v - lo) / span)))
+                            y: 2 + (geo.size.height - 4) * (1 - CGFloat((v - lo) / span)))
                 }
-                Path { p in p.addLines(points) }
+                let line = Path { curve(through: points, in: &$0) }
+                let area = Path { p in
+                    curve(through: points, in: &p)
+                    p.addLine(to: CGPoint(x: geo.size.width, y: geo.size.height))
+                    p.addLine(to: CGPoint(x: 0, y: geo.size.height))
+                    p.closeSubpath()
+                }
+                area.fill(LinearGradient(colors: [Theme.rose.opacity(0.28), Theme.rose.opacity(0)], startPoint: .top, endPoint: .bottom))
+                line
                     .stroke(LinearGradient(colors: [Theme.champagne, Theme.rose], startPoint: .leading, endPoint: .trailing),
                             style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
                     .widgetAccentable()
             }
         }
+    }
+
+    /// Curves through the midpoints so a handful of samples doesn't look jagged.
+    private func curve(through points: [CGPoint], in p: inout Path) {
+        p.move(to: points[0])
+        for i in 1..<points.count {
+            let mid = CGPoint(x: (points[i - 1].x + points[i].x) / 2, y: (points[i - 1].y + points[i].y) / 2)
+            p.addQuadCurve(to: mid, control: points[i - 1])
+        }
+        p.addLine(to: points[points.count - 1])
     }
 }

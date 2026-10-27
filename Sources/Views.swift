@@ -229,7 +229,20 @@ struct AppIcon: View {
         guard let info = Bundle(path: path)?.infoDictionary,
               info["CFBundleIconFile"] != nil || info["CFBundleIconName"] != nil || info["CFBundleIcons"] != nil
         else { return nil }
-        let image = NSWorkspace.shared.icon(forFile: path)
+        // Rasterise once at row size (24 pt @2x) so scrolling never samples the 1024 px representations.
+        let full = NSWorkspace.shared.icon(forFile: path)
+        let size = NSSize(width: 24, height: 24)
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 48, pixelsHigh: 48, bitsPerSample: 8,
+                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+        else { return full }
+        rep.size = size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        full.draw(in: NSRect(origin: .zero, size: size))
+        NSGraphicsContext.restoreGraphicsState()
+        let image = NSImage(size: size)
+        image.addRepresentation(rep)
         cache[path] = image
         return image
     }
@@ -279,6 +292,7 @@ struct WindowVisibilityReader: NSViewRepresentable {
 
 struct ContentView: View {
     @Environment(Monitor.self) private var monitor
+    @State private var scrolling = false
 
     var body: some View {
         ScrollView {
@@ -286,11 +300,17 @@ struct ContentView: View {
                 .padding(.horizontal, 24)
                 .padding(.top, 34)
                 .padding(.bottom, 20)
+                // Content sliding under a still pointer would otherwise fire hover on every row and
+                // move the charts' hover selection, re-rendering a whole chart mid-scroll.
+                .allowsHitTesting(!scrolling)
         }
         .scrollIndicators(.never)
         // EMBER_SCROLL_ANCHOR=bottom opens scrolled down; used to capture README screenshots.
         .defaultScrollAnchor(ProcessInfo.processInfo.environment["EMBER_SCROLL_ANCHOR"] == "bottom" ? .bottom : .top)
-        .onScrollPhaseChange { _, phase in monitor.setScrolling(phase.isScrolling) }
+        .onScrollPhaseChange { _, phase in
+            scrolling = phase.isScrolling
+            monitor.setScrolling(phase.isScrolling)
+        }
         .frame(minWidth: 900, minHeight: 640)
         .containerBackground(for: .window) {
             AmbientBackground(band: HeatBand(monitor.chip?.maximum ?? 40))

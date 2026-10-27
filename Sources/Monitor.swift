@@ -55,7 +55,9 @@ final class Monitor {
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: Self.sensorInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self else { return }
+                // Reading 40+ sensors and the SMC happens on the main thread, so skip it mid-scroll;
+                // setScrolling(false) refreshes as soon as the scroll ends.
+                guard let self, !self.scrolling else { return }
                 // With no window or menu open, only the menu bar label and widget need data: every 6 s is plenty.
                 self.ticks += 1
                 if self.isWatched || self.ticks % 3 == 0 { self.refresh() }

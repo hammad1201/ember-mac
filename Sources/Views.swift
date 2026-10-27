@@ -985,17 +985,19 @@ struct MenuBarPanel: View {
         GlassEffectContainer(spacing: 12) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 14) {
+                    // Thin ring with room around the figure; the label sits in the gauge's open bottom.
                     ZStack {
-                        TemperatureRing(value: hottest, lineWidth: 9, showsThrottleMark: false)
-                            .padding(5)
-                        VStack(spacing: -2) {
-                            Text(String(format: "%.0f°", hottest))
-                                .font(.system(size: 26, weight: .semibold, design: .rounded))
-                                .monospacedDigit()
-                            Text("chip").font(.caption2).foregroundStyle(.secondary)
-                        }
+                        TemperatureRing(value: hottest, lineWidth: 8, showsThrottleMark: false)
+                        Text(String(format: "%.0f°", hottest))
+                            .font(.system(size: 26, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .offset(y: -2)
+                        Text("chip")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .offset(y: 40)
                     }
-                    .frame(width: 96, height: 96)
+                    .frame(width: 108, height: 108)
 
                     VStack(alignment: .leading, spacing: 6) {
                         Label {
@@ -1004,7 +1006,7 @@ struct MenuBarPanel: View {
                             Image(systemName: monitor.thermalState.symbol).foregroundStyle(monitor.thermalState.color)
                         }
                         if !monitor.fans.isEmpty {
-                            Label(monitor.fans.map { "\(Int($0.rpm))" }.joined(separator: " · ") + " rpm", systemImage: "fan")
+                            Label(monitor.fans.map { Int($0.rpm).formatted() }.joined(separator: " · ") + " rpm", systemImage: "fan")
                         }
                         if let watts = monitor.power?.systemWatts {
                             Label(String(format: "%.1f W", watts), systemImage: "bolt.fill")

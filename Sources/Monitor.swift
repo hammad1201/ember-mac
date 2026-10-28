@@ -2,7 +2,6 @@ import CoreGraphics
 import Foundation
 import Observation
 import os
-import WidgetKit
 
 struct HistorySample: Identifiable, Equatable {
     let date: Date
@@ -38,7 +37,6 @@ final class Monitor {
     @ObservationIgnored private var menuOpen = false
     @ObservationIgnored private var scrolling = false
     @ObservationIgnored private var lastSnapshot = Date.distantPast
-    @ObservationIgnored private var snapshotHistory: [Double] = []
     @ObservationIgnored private var snapshotsWritten = 0
     @ObservationIgnored private var ticks = 0
     @ObservationIgnored private var usageVisible = true
@@ -62,10 +60,6 @@ final class Monitor {
                 guard let self, !self.scrolling else { return }
                 self.update(\.processes, sample)
             }
-        }
-        // Carry the widget's trend over a relaunch, so it doesn't start empty again.
-        if let last = Snapshot.load(), Date.now.timeIntervalSince(last.date) < 30 * 60 {
-            snapshotHistory = last.history
         }
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: Self.sensorInterval, repeats: true) { [weak self] _ in
@@ -159,8 +153,12 @@ final class Monitor {
         }
         historyBuffer.removeAll { now.timeIntervalSince($0.date) > Self.historyWindow }
         update(\.menuTemperature, chip.map { Int($0.maximum.rounded()) })
+        // While the app runs it refreshes the widget's snapshot every minute (nudging WidgetKit every
+        // 5 minutes); the background agent covers the time it's closed.
         if let chip, now.timeIntervalSince(lastSnapshot) >= 60 {
-            writeSnapshot(chip: chip, power: power, at: now)
+            lastSnapshot = now
+            SnapshotWriter.write(chip: chip, power: power, at: now, reloadWidget: snapshotsWritten % 5 == 0)
+            snapshotsWritten += 1
         }
 
         guard isWatched, !scrolling else { return }
@@ -172,29 +170,6 @@ final class Monitor {
         update(\.loadAverage, (SystemStats.loadAverage[0] * 10).rounded() / 10)
         update(\.swapUsedGB, (SystemStats.swapUsedGB * 10).rounded() / 10)
         update(\.history, historyBuffer)
-    }
-
-    /// Writes the widget's snapshot (once a minute) and nudges WidgetKit every 5 minutes.
-    private func writeSnapshot(chip: SensorGroup, power: PowerInfo?, at now: Date) {
-        guard Snapshot.url != nil else { return }
-        lastSnapshot = now
-        snapshotHistory.append(chip.maximum)
-        snapshotHistory = Array(snapshotHistory.suffix(30))
-        let fans = SMCReader.fans()
-        Snapshot(
-            date: now,
-            chipMax: chip.maximum,
-            chipAverage: chip.average,
-            fanRPM: fans.isEmpty ? nil : fans.map(\.rpm).reduce(0, +) / Double(fans.count),
-            fanFraction: fans.isEmpty ? nil : fans.map(\.fraction).reduce(0, +) / Double(fans.count),
-            watts: power?.systemWatts,
-            batteryPercent: power?.batteryPercent,
-            charging: power?.isCharging ?? false,
-            thermalState: ProcessInfo.processInfo.thermalState.rawValue,
-            history: snapshotHistory
-        ).save()
-        if snapshotsWritten % 5 == 0 { WidgetCenter.shared.reloadAllTimelines() }
-        snapshotsWritten += 1
     }
 
     /// Assigns only when the value changed, so observers aren't invalidated for nothing.

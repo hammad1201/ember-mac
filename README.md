@@ -34,7 +34,7 @@ My MacBook was running hot and I wanted to know *why*. Activity Monitor tells yo
 - **Battery**: charge, time remaining, cycle count and health.
 - **Thermal state**: whether macOS is throttling, straight from `ProcessInfo`.
 - **Menu bar extra**: the hottest sensor in your menu bar, with a quick panel showing the top energy users.
-- **Desktop widget**: small and medium sizes with the gauge, fans, power, battery and a 30-minute temperature trend.
+- **Desktop widget**: small and medium sizes with the gauge, fans, power, battery and a 3-hour temperature trend. It keeps updating while Ember is closed.
 - **Burgundy Liquid Glass UI** whose ambient glow shifts from deep wine to crimson as the chip heats up.
 
 <p align="center">
@@ -50,7 +50,8 @@ A monitor that heats up your Mac defeats the point, so Ember is careful:
 | Dashboard open, app list on screen | ~1.6% app + ~1.7% for the process sampler |
 | Dashboard open, app list scrolled away | ~1.6% |
 | Window closed, or you've stepped away | well under 1% |
-| Desktop widget | ~0%: it redraws every 5 minutes from a 200-byte snapshot |
+| Desktop widget | ~0%: it redraws every 5 minutes from a small snapshot file |
+| Background agent (app closed) | runs for a fraction of a second every 8 minutes, then exits |
 
 - Process sampling (a single long-running `top`, every 5 s like Activity Monitor) only runs while a process list is actually on screen.
 - After a minute without keyboard or mouse input, Ember stops sampling processes and reads sensors every 10 s.
@@ -74,7 +75,9 @@ open ~/Applications/Ember.app
 
 **About the widget:** macOS only loads widgets signed by a developer identity, and the app shares data with the widget through a team-scoped App Group. `build.sh` picks the first *Apple Development* certificate in your keychain automatically (signing into Xcode with your Apple ID creates one). Without one, Ember is ad-hoc signed and builds without the widget; everything else works the same.
 
-To add the widget, right-click the desktop → **Edit Widgets** → search for **Ember**. Turn on **Open at login** in the menu bar panel so the widget keeps updating.
+To add the widget, right-click the desktop → **Edit Widgets** → search for **Ember**.
+
+The widget can't read sensors itself (macOS sandboxes widgets), so Ember registers a tiny background agent the first time it runs. launchd starts it every 8 minutes, it writes the widget's data and exits, and the widget stays fresh even when Ember is closed. Turn it off any time in **Ember › Settings** (⌘,), with the **Background widget updates** switch in the menu bar panel, or in System Settings › General › Login Items & Extensions.
 
 ## How it works
 
@@ -95,6 +98,7 @@ Nothing leaves your Mac: Ember makes no network requests.
 ```
 Sources/          App: SwiftUI views, the monitor, sensor/SMC/power readers
 Sources/Shared/   Theme and widget snapshot, shared with the widget
+Agent/            Background agent that refreshes the widget while the app is closed
 Widget/           WidgetKit extension
 Scripts/          Icon and social card renderers
 build.sh          Build, sign, bundle the widget, optionally install

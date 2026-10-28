@@ -980,7 +980,6 @@ struct MenuBarLabel: View {
 struct MenuBarPanel: View {
     @Environment(Monitor.self) private var monitor
     @Environment(\.openWindow) private var openWindow
-    @State private var opensAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
         let hottest = monitor.chip?.maximum ?? 0
@@ -1044,18 +1043,13 @@ struct MenuBarPanel: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .glassEffect(.regular.tint(Theme.burgundy.opacity(0.14)), in: .rect(cornerRadius: 16))
 
-                Toggle(isOn: $opensAtLogin) {
-                    Text("Open at login (keeps the widget fresh)").font(.callout)
+                VStack(alignment: .leading, spacing: 6) {
+                    OpenAtLoginToggle(compact: true)
+                    if LoginItems.shared.agentAvailable { WidgetAgentToggle(compact: true) }
                 }
+                .font(.callout)
                 .toggleStyle(.switch)
                 .controlSize(.mini)
-                .onChange(of: opensAtLogin) { _, enabled in
-                    do {
-                        if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-                    } catch {
-                        opensAtLogin = SMAppService.mainApp.status == .enabled
-                    }
-                }
 
                 HStack {
                     Button {
@@ -1066,6 +1060,12 @@ struct MenuBarPanel: View {
                     }
                     .buttonStyle(.glassProminent)
                     Spacer()
+                    SettingsLink {
+                        Image(systemName: "gearshape")
+                    }
+                    .buttonStyle(.glass)
+                    .help("Settings")
+                    .simultaneousGesture(TapGesture().onEnded { NSApp.activate() })
                     Button("Quit") { NSApp.terminate(nil) }
                         .buttonStyle(.glass)
                 }
@@ -1076,6 +1076,92 @@ struct MenuBarPanel: View {
         .tint(Theme.wine)
         // onAppear fires when SwiftUI builds the panel at launch, not when it opens, so track the
         // panel window's real visibility instead.
-        .background(WindowVisibilityReader { monitor.setMenuOpen($0) })
+        .background(WindowVisibilityReader { open in
+            monitor.setMenuOpen(open)
+            if open { LoginItems.shared.refresh() }
+        })
+    }
+}
+
+// MARK: - Settings
+
+/// A switch with its label on the left and the switch flush right, for the compact menu panel.
+private struct SwitchRow: View {
+    let title: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Toggle(title, isOn: $isOn).labelsHidden()
+        }
+    }
+}
+
+struct OpenAtLoginToggle: View {
+    var compact = false
+    private let items = LoginItems.shared
+
+    var body: some View {
+        let isOn = Binding(get: { items.opensAtLogin }, set: { items.setOpensAtLogin($0) })
+        if compact { SwitchRow(title: "Open at login", isOn: isOn) } else { Toggle("Open at login", isOn: isOn) }
+    }
+}
+
+/// Switches the background agent that keeps the desktop widget fresh while Ember is closed.
+struct WidgetAgentToggle: View {
+    var compact = false
+    private let items = LoginItems.shared
+
+    var body: some View {
+        let isOn = Binding(get: { items.updatesWidget }, set: { items.setUpdatesWidget($0) })
+        VStack(alignment: .leading, spacing: 6) {
+            if compact {
+                SwitchRow(title: "Background widget updates", isOn: isOn)
+            } else {
+                Toggle(isOn: isOn) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Update the widget in the background")
+                        Text("A small agent refreshes the desktop widget every 8 minutes while Ember is closed. Each run takes a fraction of a second, then it exits.")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            if items.agentNeedsApproval {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.circle.fill").foregroundStyle(Theme.champagne)
+                    Text("Turned off in System Settings.").foregroundStyle(.secondary)
+                    Button("Open Login Items…") { items.openSystemSettings() }.buttonStyle(.link)
+                }
+                .font(.caption)
+            }
+        }
+    }
+}
+
+struct SettingsView: View {
+    var body: some View {
+        Form {
+            Section("Startup") {
+                OpenAtLoginToggle()
+            }
+            if LoginItems.shared.agentAvailable {
+                Section {
+                    WidgetAgentToggle()
+                } header: {
+                    Text("Desktop widget")
+                } footer: {
+                    Text("You can also turn it off in System Settings › General › Login Items & Extensions, where it's listed as Ember.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 460)
+        .fixedSize(horizontal: false, vertical: true)
+        .onAppear { LoginItems.shared.refresh() }
+        .tint(Theme.wine)
     }
 }

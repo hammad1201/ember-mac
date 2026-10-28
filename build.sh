@@ -51,6 +51,17 @@ if [[ -n "$TEAM_ID" ]]; then
     -o "$APPEX/Contents/MacOS/EmberWidget"
   sed "s/__APP_GROUP__/$APP_GROUP/" Resources/Widget-Info.plist > "$APPEX/Contents/Info.plist"
 
+  echo "› Compiling background agent"
+  # Keeps the widget's snapshot fresh while the app is closed (registered with SMAppService.agent).
+  swiftc -O -swift-version 5 -target $TARGET \
+    -import-objc-header Sources/Bridge.h \
+    Agent/main.swift Sources/Sensors.swift Sources/Power.swift Sources/SnapshotWriter.swift \
+    Sources/Shared/Snapshot.swift build/obj/SMC.o \
+    -framework IOKit \
+    -o "$APP/Contents/MacOS/EmberAgent"
+  mkdir -p "$APP/Contents/Library/LaunchAgents"
+  cp Resources/Agent.plist "$APP/Contents/Library/LaunchAgents/com.hammad.Ember.agent.plist"
+
   cat > build/widget.entitlements <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -69,6 +80,8 @@ PLIST
 
   echo "› Signing with $SIGN_IDENTITY"
   codesign --force --sign "$SIGN_IDENTITY" --entitlements build/widget.entitlements "$APPEX"
+  codesign --force --sign "$SIGN_IDENTITY" --entitlements build/app.entitlements \
+    --identifier com.hammad.Ember.agent "$APP/Contents/MacOS/EmberAgent"
   codesign --force --sign "$SIGN_IDENTITY" --entitlements build/app.entitlements "$APP"
 else
   echo "› No Apple Development identity found: ad-hoc signing, widget skipped"
@@ -83,6 +96,8 @@ if [[ "${1:-}" == "--install" ]]; then
   LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
   "$LSREGISTER" -u "$PWD/$APP" 2>/dev/null || true
   "$LSREGISTER" -f -R ~/Applications/Ember.app
+  # Restart the background agent (if registered) so it runs the new binary.
+  launchctl kickstart -k "gui/$(id -u)/com.hammad.Ember.agent" 2>/dev/null || true
   echo "› Installed to ~/Applications/Ember.app"
 fi
 echo "✓ $APP"

@@ -12,8 +12,10 @@ struct Snapshot: Codable, Equatable {
     var batteryPercent: Int?
     var charging: Bool
     var thermalState: Int
-    /// Hottest-sensor reading once a minute, oldest first.
+    /// Hottest-sensor readings for the trend, oldest first.
     var history: [Double]
+    /// When each trend point was taken (absent in snapshots from older builds).
+    var historyDates: [Date]?
 
     var state: ProcessInfo.ThermalState { ProcessInfo.ThermalState(rawValue: thermalState) ?? .nominal }
 
@@ -48,6 +50,7 @@ struct Snapshot: Codable, Equatable {
     static let placeholder = Snapshot(
         date: .now, chipMax: 62, chipAverage: 57, fanRPM: 2400, fanFraction: 0.31, watts: 21.5,
         batteryPercent: 64, charging: false, thermalState: 0,
-        history: [55, 56, 58, 61, 60, 59, 62, 64, 63, 61, 60, 62, 63, 61, 62]
+        history: [55, 56, 58, 61, 60, 59, 62, 64, 63, 61, 60, 62, 63, 61, 62],
+        historyDates: (0..<15).map { Date.now.addingTimeInterval(Double($0 - 14) * 8 * 60) }
     )
 }

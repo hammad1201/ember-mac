@@ -2,7 +2,8 @@ import SwiftUI
 import WidgetKit
 
 // The widget never reads sensors itself (it runs sandboxed). Ember writes a snapshot about once
-// a minute and the widget redraws from it every 5 minutes, so it costs next to nothing.
+// a minute while it's open (its background agent every 8 minutes while it's closed) and the widget
+// redraws from it every 5 minutes, so it costs next to nothing.
 
 struct Entry: TimelineEntry {
     let date: Date
@@ -117,10 +118,9 @@ private struct UpdatedLabel: View {
     let date: Date
 
     var body: some View {
-        // Ember writes every minute; anything much older means the app isn't running.
-        // A clock time, not a relative one: `.relative` ticks every second ("1 min, 4 sec").
-        if Date.now.timeIntervalSince(date) > 15 * 60 {
-            Text("Ember isn't running").font(.system(size: 9)).foregroundStyle(Theme.blush)
+        // The app or its background agent writes at least every 8 minutes; much older means neither is running.
+        if Date.now.timeIntervalSince(date) > 20 * 60 {
+            Text("Open Ember to update").font(.system(size: 9)).foregroundStyle(Theme.blush)
         } else {
             Text("Updated \(date.formatted(date: .omitted, time: .shortened))")
                 .font(.system(size: 9)).foregroundStyle(.white.opacity(0.5))
@@ -204,10 +204,13 @@ private struct MediumView: View {
 
     private var trendCaption: String {
         guard snapshot.history.count > 1, let lo = snapshot.history.min(), let hi = snapshot.history.max() else {
-            return "Last 30 min"
+            return "Trend"
         }
-        let minutes = snapshot.history.count
-        return String(format: "Last %d min · %.0f–%.0f°", minutes, lo, hi)
+        let span = snapshot.historyDates.flatMap { $0.first }.map { snapshot.date.timeIntervalSince($0) }
+            ?? Double(snapshot.history.count) * 60
+        let minutes = Int((span / 60).rounded())
+        let period = minutes < 60 ? "\(max(minutes, 1)) min" : "\(Int((Double(minutes) / 60).rounded())) h"
+        return String(format: "Last %@ · %.0f–%.0f°", period, lo, hi)
     }
 }
 
